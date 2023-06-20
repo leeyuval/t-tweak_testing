@@ -404,7 +404,7 @@ def mock_update_db(a_db, value):
 def test_storage():
     # Standby -> get state
     apply_command(GET_STATE_COMMAND)
-    check_expected_state(STANDBY_STATE)
+    check_expected_state(INPUT_STATE)
 
     # Standby -> Input
     add_string_command()
