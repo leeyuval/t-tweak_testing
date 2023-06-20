@@ -11,11 +11,26 @@ import pytest
 from fastapi.testclient import TestClient
 from fastapi import status as http_status
 
-
 # Makes it easier to run in students' Windows's laptops, with no need to set path vars
 sys.path.append(os.path.dirname(os.path.abspath(__name__)))
 import main
 import extra
+
+# ***** Response Codes *****
+OK_RESPONSE = 200
+
+# ***** States *****
+STANDBY_STATE = "StandBy"
+INPUT_STATE = "Input"
+ERROR_STATE = "Error"
+QUERY_STATE = "Query"
+
+# ***** Commands *****
+CLEAR_COMMAND = "clear"
+STOP_COMMAND = "stop"
+SORRY_COMMAND = "sorry"
+GET_STATE_COMMAND = "state"
+
 
 # Client that gives us access to a dummy server for HTTP tests
 client = None
@@ -69,7 +84,7 @@ def teardown_function():
 def test_lower_ABCD():
     r = main.lower("ABCD")
     j = json.loads(r.body)
-    assert r.status_code == 200
+    assert r.status_code == OK_RESPONSE
     assert j["res"] == "abcd"
 
 
@@ -91,8 +106,8 @@ def test_password_length_score():
         r_small = main.password_strength(password)
         j_small = json.loads(r_small.body)
 
-        assert 200 == r_large.status_code
-        assert 200 == r_small.status_code
+        assert OK_RESPONSE == r_large.status_code
+        assert OK_RESPONSE == r_small.status_code
         assert j_large["res"] >= j_small["res"]
 
 
@@ -126,7 +141,7 @@ def test_password_length_score():
 def test_upper_many(test, expected):
     r = main.upper(test)
     j = json.loads(r.body)
-    assert r.status_code == 200
+    assert r.status_code == OK_RESPONSE
     assert j["res"] == expected
 
 
@@ -138,7 +153,7 @@ def test_upper_many(test, expected):
 # ---------------------------------------------------------------------------
 def test_upper_rest_within_bv():
     r = client.get("upper/word")
-    assert 200 == r.status_code
+    assert OK_RESPONSE == r.status_code
     assert "WORD" == r.json()["res"]
 
 
@@ -166,13 +181,13 @@ def test_random_naive():
     r = main.rand_str(4)
     j = json.loads(r.body)
 
-    assert r.status_code == 200
+    assert r.status_code == OK_RESPONSE
     assert j["res"] == "2yW4"
 
     r = main.rand_str(15)
     j = json.loads(r.body)
 
-    assert r.status_code == 200
+    assert r.status_code == OK_RESPONSE
     assert j["res"] == "Acq9GFz6Y1t9EwL"
 
 
@@ -190,7 +205,7 @@ def test_random_unit(monkeypatch, length):
     monkeypatch.setattr(main.extra, "get_rand_char", lambda: "t")
     r = main.rand_str(length)
     j = json.loads(r.body)
-    assert r.status_code == 200
+    assert r.status_code == OK_RESPONSE
     assert j["res"] == "t" * length
 
 
@@ -229,8 +244,66 @@ def test_root_status():
 #   Hint: You will need to use:
 #   - direct calls to main.password_stregth in order to receive scores for all examples
 # ---------------------------------------------------------------------------
-def test_password_ec():
-    assert True
+@pytest.mark.parametrize(
+    "test,expected",
+    [
+        ("", 0),
+        ("1", 0),
+        ("Too-L0ng-4-the-allowed-input-length", 10),
+        ("root", 0),
+        ("password", 0),
+        ("admin", 0),
+        ("G00dShort", 7),
+        ("gggggggg", 0),
+        ("gfs98ased", 5),
+        ("NOT1LOWCASE", 7),
+        ("noDIGIT", 3),
+        ("lowcaseonly", 5),
+        ("UPCASEONLY", 4),
+        ("1234567", 1),
+        ("%@#$^&*", 0),
+        ("L0ng-And-G00d", 10),
+        ("aaaaaaaaaaaaaaaaaa", 0),
+        ("l0ngbutnouppercase", 8),
+        ("LONG1BUTNOLOWCASE", 8),
+        ("LongButNotOneDigit", 8),
+        ("longbutonlylowecase", 6),
+        ("LONGBUTONLYUPCASE", 6),
+        ("12345678901234", 6),
+        ("%@#$%$%$%$%$%$%$", 4)
+    ],
+    ids=[
+        "Length = 0",
+        "0 < length <= 2",
+        "Length > 20",
+        "Password is 'root'",
+        "Password is 'password'",
+        "Password is 'admin'",
+        "2 < length < 12, lowercase, upcase, digit",
+        "2 < length < 12, all same char",
+        "4 < length < 12, no uppercase",
+        "4 < length < 12, no lowercase",
+        "4 < length < 12, no digit",
+        "4 < length < 12, lowcase only",
+        "4 < length < 12, upcase only",
+        "4 < length < 12, digit only",
+        "6 < length < 12, special chars only",
+        "12 < length, lowcase, upcase, digit",
+        "12 < length, all same char",
+        "12 < length, no uppercase",
+        "12 < length, no lowercase",
+        "12 < length, no digit",
+        "12 < length, lowcase only",
+        "12 < length, upcase only",
+        "12 < length, digit only",
+        "12 < length, special chars only"
+    ],
+)
+def test_password_ec(test, expected):
+    r = main.password_strength(test)
+    j = json.loads(r.body)
+    assert r.status_code == OK_RESPONSE
+    assert j["res"] == expected
 
 
 # ---------------------------------------------------------------------------
@@ -249,8 +322,17 @@ def test_password_ec():
 #       - "pytest.raises" because the function works by throwing a 203 exception
 #   203: Non-Authoritative Information
 # ---------------------------------------------------------------------------
-def test_server_time():
-    assert True
+
+@pytest.mark.parametrize("expected_weekday", [datetime.datetime.now() + datetime.timedelta(days=i) for i in range(7)])
+def test_server_time(expected_weekday, monkeypatch):
+    monkeypatch.setattr(extra, "get_network_time", lambda: expected_weekday)
+
+    with pytest.raises(fastapi.HTTPException) as http_exception:
+        main.server_time()
+
+    server_time_exception = http_exception.value
+    assert server_time_exception.status_code == http_status.HTTP_203_NON_AUTHORITATIVE_INFORMATION
+    assert server_time_exception.detail.startswith(expected_weekday.strftime("%a"))
 
 
 # ---------------------------------------------------------------------------
@@ -269,8 +351,13 @@ def test_server_time():
 #       - a large loop and a smart way to check the weekday
 #   203: Non-Authoritative Information
 # ---------------------------------------------------------------------------
-def test_server_time_client():
-    assert True
+def test_server_time_client(monkeypatch):
+    for days_counter in range(100):
+        test_date = datetime.datetime.now() + datetime.timedelta(days=days_counter)
+        monkeypatch.setattr(extra, "get_network_time", lambda: test_date)
+        server_time_response = client.get("/time")
+        assert http_status.HTTP_203_NON_AUTHORITATIVE_INFORMATION == server_time_response.status_code
+        assert server_time_response.json()['detail'].startswith((test_date.strftime("%a")))
 
 
 # ---------------------------------------------------------------------------
@@ -285,8 +372,23 @@ def test_server_time_client():
 #       - fastapi's "TestClient" to run the REST API via a client (it keeps the session alive).
 #       - A function you invent that will mock update_db and update a flag for pass/fail (can be global)
 # ---------------------------------------------------------------------------
-def test_storage_db():
-    assert True
+
+update_db_called = False
+
+
+def test_storage_db(monkeypatch):
+    test_word = "qwert"
+    monkeypatch.setattr(extra, "update_db", lambda a_db, value: mock_update_db(a_db, value))
+    add_string_response = client.get(f"/storage/add?string={test_word}")
+    assert add_string_response.status_code == OK_RESPONSE
+    assert update_db_called  # Check extra.update_db() was called
+    get_index_response = client.get("/storage/query?index=1")
+    assert get_index_response.status_code == OK_RESPONSE
+
+
+def mock_update_db(a_db, value):
+    global update_db_called
+    update_db_called = True
 
 
 # ---------------------------------------------------------------------------
@@ -300,4 +402,76 @@ def test_storage_db():
 #       - fastapi's "TestClient" to run the REST API via a client (it keeps the session alive).
 # ---------------------------------------------------------------------------
 def test_storage():
-    assert True
+    # Standby -> get state
+    apply_command(GET_STATE_COMMAND)
+    check_expected_state(STANDBY_STATE)
+
+    # Standby -> Input
+    add_string_command()
+    check_expected_state(INPUT_STATE)
+
+    # Input -> clear -> stop -> Standby
+    apply_command(CLEAR_COMMAND)
+    apply_command(STOP_COMMAND)
+    check_expected_state(STANDBY_STATE)
+
+    # Standby -> Input -> Error -> sorry -> Query -> valid query
+    move_to_error()
+    check_expected_state(ERROR_STATE)
+    apply_command(SORRY_COMMAND)
+    check_expected_state(QUERY_STATE)
+    query_index_command(1)
+
+    # Query -> invalid query -> Error -> Query -> stop
+    query_index_command(9)
+    check_expected_state(ERROR_STATE)
+    apply_command(SORRY_COMMAND)
+    check_expected_state(QUERY_STATE)
+    apply_command(STOP_COMMAND)
+    check_expected_state(STANDBY_STATE)
+
+    # Standby -> Input -> Error -> sorry -> Query -> clear -> Input
+    move_to_error()
+    check_expected_state(ERROR_STATE)
+    apply_command(SORRY_COMMAND)
+    check_expected_state(QUERY_STATE)
+    apply_command(CLEAR_COMMAND)
+    check_expected_state(INPUT_STATE)
+
+    # Input -> Error -> clear -> Input
+    move_to_error()
+    check_expected_state(ERROR_STATE)
+    apply_command(CLEAR_COMMAND)
+    check_expected_state(INPUT_STATE)
+
+    # Input -> Error -> stop -> Standby
+    move_to_error()
+    check_expected_state(ERROR_STATE)
+    apply_command(STOP_COMMAND)
+    check_expected_state(STANDBY_STATE)
+
+
+def apply_command(command):
+    command_response = client.get(f"/storage/{command}")
+    assert command_response.status_code == OK_RESPONSE
+
+
+def add_string_command(test_word="test_word"):
+    add_string_response = client.get(f"/storage/add?string={test_word}")
+    assert add_string_response.status_code == OK_RESPONSE
+
+
+def query_index_command(index):
+    query_response = client.get(f"/storage/query?index={str(index)}")
+    assert query_response.status_code == OK_RESPONSE
+
+
+def move_to_error():
+    for i in range(6):
+        add_string_response = client.get(f"/storage/add?string={str(i)}")
+        assert add_string_response.status_code == OK_RESPONSE
+
+
+def check_expected_state(state):
+    get_state_response = client.get(f"/storage/state")
+    assert get_state_response.json()['res'].startswith(f"State: {state}")
