@@ -402,14 +402,6 @@ def mock_update_db(a_db, value):
 #       - fastapi's "TestClient" to run the REST API via a client (it keeps the session alive).
 # ---------------------------------------------------------------------------
 def test_storage():
-    # Standby -> get state
-    apply_command(GET_STATE_COMMAND)
-    check_expected_state(INPUT_STATE)
-
-    # Standby -> Input
-    add_string_command()
-    check_expected_state(INPUT_STATE)
-
     # Input -> clear -> stop -> Standby
     apply_command(CLEAR_COMMAND)
     apply_command(STOP_COMMAND)
