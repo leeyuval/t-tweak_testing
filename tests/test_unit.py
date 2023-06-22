@@ -16,6 +16,9 @@ sys.path.append(os.path.dirname(os.path.abspath(__name__)))
 import main
 import extra
 
+# ***** General Tests Variables *****
+TEST_WORD = "qwert"
+
 # ***** Response Codes *****
 OK_RESPONSE = 200
 
@@ -352,12 +355,20 @@ def test_server_time(expected_weekday, monkeypatch):
 #   203: Non-Authoritative Information
 # ---------------------------------------------------------------------------
 def test_server_time_client(monkeypatch):
-    for days_counter in range(100):
-        test_date = datetime.datetime.now() + datetime.timedelta(days=days_counter)
+    weekdays = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
+    server_time_response = client.get("/time")
+    assert http_status.HTTP_203_NON_AUTHORITATIVE_INFORMATION == server_time_response.status_code
+    today = datetime.datetime.strptime(server_time_response.json()['detail'], "%a %b %d %H:%M:%S %Y")
+    today_index = weekdays.index(today.strftime("%a"))
+
+    for days_counter in range(1, 101):
+        test_date = today + datetime.timedelta(days=days_counter)
         monkeypatch.setattr(extra, "get_network_time", lambda: test_date)
         server_time_response = client.get("/time")
         assert http_status.HTTP_203_NON_AUTHORITATIVE_INFORMATION == server_time_response.status_code
-        assert server_time_response.json()['detail'].startswith((test_date.strftime("%a")))
+        current_day = server_time_response.json()['detail'].split()[0]
+        expected_day = weekdays[(today_index+days_counter) % 7]
+        assert current_day == expected_day
 
 
 # ---------------------------------------------------------------------------
@@ -373,22 +384,16 @@ def test_server_time_client(monkeypatch):
 #       - A function you invent that will mock update_db and update a flag for pass/fail (can be global)
 # ---------------------------------------------------------------------------
 
-update_db_called = False
-
-
 def test_storage_db(monkeypatch):
-    test_word = "qwert"
     monkeypatch.setattr(extra, "update_db", lambda a_db, value: mock_update_db(a_db, value))
-    add_string_response = client.get(f"/storage/add?string={test_word}")
+    add_string_response = client.get(f"/storage/add?string={TEST_WORD}")
     assert add_string_response.status_code == OK_RESPONSE
-    assert update_db_called  # Check extra.update_db() was called
     get_index_response = client.get("/storage/query?index=1")
     assert get_index_response.status_code == OK_RESPONSE
 
 
 def mock_update_db(a_db, value):
-    global update_db_called
-    update_db_called = True
+    assert isinstance(a_db, list) and value == TEST_WORD
 
 
 # ---------------------------------------------------------------------------
@@ -446,11 +451,6 @@ def test_storage():
 def apply_command(command):
     command_response = client.get(f"/storage/{command}")
     assert command_response.status_code == OK_RESPONSE
-
-
-def add_string_command(test_word="test_word"):
-    add_string_response = client.get(f"/storage/add?string={test_word}")
-    assert add_string_response.status_code == OK_RESPONSE
 
 
 def query_index_command(index):
